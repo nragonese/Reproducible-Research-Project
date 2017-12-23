@@ -1,0 +1,291 @@
+---
+title: "Most Harmful Weather Events"
+author: "nragonese"
+date: "December 19, 2017"
+output: html_document
+---
+# Synopsis
+
+The goal of this analysis was to address the below questions: 
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+When looking to answer these questions, I first examined how the data changed over the years. Based on plotting this data(see Total Fatalities by Year and Total Damage by Year), it became clear that the recording of these events changed drastically in the early 90's, and this is the earliest I could base our analysis on.
+
+In terms of population health, Wind related events appear most harmful, as those events average 8.5 deaths per event (1.89 times that of Storms, the next most dangerous event). The primary difference between the wind and storms category is that wind includes tornadoes.
+
+In terms of the the greatest economic consequences, FIRE related events are the most impactful, as they average 2.1mm worth of damage per event. FLOOD related events are close behind with 1.9mm worth of damage per event.
+
+# Data Processing
+
+Data was downloaded into the local working directory and then read into an object "storm" with read.csv.
+```{r setup, cache= TRUE, warning = FALSE}
+  #optional to chose your location for data
+  #setwd("C:/UserData/OneDrive - Red Ventures/Desktop/Data Science Accelerator/reproducible-research/Final Project")
+  
+  
+  # URL with dataset
+  dataURL <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+  
+  fp <- "StormData.csv.BZ2" #File Path for the data
+    
+  download.file(dataURL, fp)
+  storm <- read.csv(bzfile("StormData.csv.BZ2"))
+  file.remove(fp) #Removes the zip file because we've already imported the data
+  
+```
+
+Packages used: (tidyverse,lubridate,ggplot2,formattable)
+```{r, warning = FALSE}
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(formattable)
+
+```
+
+
+```{r, warning = FALSE}
+stormbyevent <- storm %>%
+  group_by(EVTYPE) %>%
+  summarise(totalfatalities = sum(FATALITIES), 
+          totalinjuries = sum(INJURIES), 
+          averagefatalities = mean(FATALITIES), 
+          averageinjuries = mean(INJURIES))  %>%
+  arrange(desc(averagefatalities))
+
+```
+
+
+Due to the large data set, I chose to filter for categories with an average of at least 1 death per event. For the sake of preparing for an event, measurement of average fatalities per event type seems to be the most important factor.
+
+```{r , warning = FALSE}
+initialhealthfilter <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  group_by(EVTYPE) %>%
+  summarise(totalfatalities = sum(FATALITIES), 
+          totalinjuries = sum(INJURIES), 
+          averagefatalities = mean(FATALITIES), 
+          averageinjuries = mean(INJURIES))  %>%
+  filter(averagefatalities >1) %>%
+  arrange(desc(averagefatalities))
+
+```
+
+
+Of the 23 Event Types, there were a lot of duplicate naming conventions. I subsetted them into the 5 clear categories I saw: HEAT, COLD, WIND, STORM, HEAVY SEAS.
+
+```{r healthsummary, warning = FALSE}
+healthsummarybyyearandcategory <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  mutate(Category = if_else(grepl("HEAT",storm$EVTYPE) == TRUE,"HEAT",
+        if_else(grepl("WARM",storm$EVTYPE) == TRUE,"HEAT",
+        if_else(grepl("COLD",storm$EVTYPE) == TRUE,"COLD",
+        if_else(grepl("Hypothermia",storm$EVTYPE) == TRUE,"COLD",
+        if_else(grepl("WIND",storm$EVTYPE) == TRUE,"WIND",
+        if_else(grepl("STORM",storm$EVTYPE) == TRUE,"STORM",
+        if_else(grepl("MARINE",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("SURF",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("surf",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("TSUNAMI",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("SEAS",storm$EVTYPE) == TRUE,"HEAVY SEAS","OTHER")))))))))))) %>%
+  filter(EVTYPE %in% initialhealthfilter$EVTYPE) %>%
+  group_by(Category,year) %>%
+  summarise(totalfatalities = sum(FATALITIES), 
+            averagefatalities = mean(FATALITIES)) %>%
+  arrange(desc(totalfatalities))
+
+```
+
+The subsetting up until this point removes all data entires prior to `r min(healthsummarybyyearandcategory$year)`. There was a concern over the validity of older data due to record keeping, but to confirm I plotted the storm data set by year.
+
+```{r, warning = FALSE}
+stormbyyear <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  group_by(year) %>%
+  summarise(totalfatalities = sum(FATALITIES), 
+          totalinjuries = sum(INJURIES), 
+          averagefatalities = mean(FATALITIES), 
+          averageinjuries = mean(INJURIES))  %>%
+  arrange(desc(averagefatalities))
+
+ggplot(data = stormbyyear) + 
+  geom_smooth(mapping = aes(x = year, y = totalfatalities), se = FALSE, method = 'loess')+
+  labs(title="Total Fatalities by Year",y = "Fatalities")
+```
+
+This plot shows a drastic uptick in fatalities starting around 1980 and continuing through the most recent data. I'm assuming the drastic uptick is a result of reporting improvements, which was alluded to in the data set given. I feel comfortable that our data set only shows data starting in `r min(healthsummarybyyearandcategory$year)` due to the assumption of improved reporting over time.
+
+
+
+# Health Results
+```{r, warning = FALSE}
+
+healthsummarybycategory <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  
+  #group_by(EVTYPE,year) %>%
+  mutate(Category = if_else(grepl("HEAT",storm$EVTYPE) == TRUE,"HEAT",
+        if_else(grepl("WARM",storm$EVTYPE) == TRUE,"HEAT",
+        if_else(grepl("COLD",storm$EVTYPE) == TRUE,"COLD",
+        if_else(grepl("Hypothermia",storm$EVTYPE) == TRUE,"COLD",
+        if_else(grepl("WIND",storm$EVTYPE) == TRUE,"WIND",
+        if_else(grepl("STORM",storm$EVTYPE) == TRUE,"STORM",
+        if_else(grepl("MARINE",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("SURF",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("surf",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("TSUNAMI",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("SEAS",storm$EVTYPE) == TRUE,"HEAVY SEAS","OTHER")))))))))))) %>%
+  filter(EVTYPE %in% initialhealthfilter$EVTYPE) %>%
+  group_by(Category) %>%
+  summarise(totalfatalities = sum(FATALITIES), 
+            averagefatalities = mean(FATALITIES)) %>%
+  arrange(desc(averagefatalities))
+
+ggplot(data = healthsummarybycategory) + 
+  geom_bar(mapping = aes(x = Category, y = averagefatalities), stat = "identity")+
+  labs(title="Average Fatalities Since 1993 by Event",y = "Average Fatalities")
+```
+
+In terms of population health, Wind related events appear most harmful, as those events average `r round(healthsummarybycategory[1,3],2)`
+deaths per event (`r round(healthsummarybycategory[1,3]/healthsummarybycategory[2,3],2)` times that of storms, the next most dangerous event). The primary difference between the wind and storms category is that wind includes tornadoes.
+
+
+```{r, warning = FALSE}
+
+healthsummarybycategory <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  
+  #group_by(EVTYPE,year) %>%
+  mutate(Category = if_else(grepl("HEAT",storm$EVTYPE) == TRUE,"HEAT",
+        if_else(grepl("WARM",storm$EVTYPE) == TRUE,"HEAT",
+        if_else(grepl("COLD",storm$EVTYPE) == TRUE,"COLD",
+        if_else(grepl("Hypothermia",storm$EVTYPE) == TRUE,"COLD",
+        if_else(grepl("WIND",storm$EVTYPE) == TRUE,"WIND",
+        if_else(grepl("STORM",storm$EVTYPE) == TRUE,"STORM",
+        if_else(grepl("MARINE",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("SURF",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("surf",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("TSUNAMI",storm$EVTYPE) == TRUE,"HEAVY SEAS",
+        if_else(grepl("SEAS",storm$EVTYPE) == TRUE,"HEAVY SEAS","OTHER")))))))))))) %>%
+  filter(EVTYPE %in% initialhealthfilter$EVTYPE) %>%
+  group_by(Category) %>%
+  summarise(totalinjuries = sum(INJURIES), 
+            averageinjuries = mean(INJURIES)) %>%
+  arrange(desc(averageinjuries))
+
+ggplot(data = healthsummarybycategory) + 
+  geom_bar(mapping = aes(x = Category, y = averageinjuries), stat = "identity")+
+  labs(title="Average Injuries Since 1993 by Event",y = "Average Injuries")
+```
+
+Although my analysis prioritized death statistics, it was worth comparing the injury results to the death results. Although storm and wind remain as the two most harmful, storms make a significant jump over wind in terms of average injuries. Another interesting trend is the significant drop off from deaths to injuries for cold related events.
+
+# Economic Results
+
+For the sake of economic consequences, the property damage "EXP"s were converted into their corresponding numerical value and multiplied by the column with their corresponding values. I then added the crop and property damages to get a total damage metric.
+
+Once again, the ammount of data reported drastically increases around 1990, so we will once again use 1993 as the cut off for our data, to be consistent.
+
+```{r, warning = FALSE}
+stormbyyear <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  mutate(propertydamagecoefficient = 
+            if_else(PROPDMGEXP == "B",1000000000,
+            if_else(PROPDMGEXP == "M",1000000,
+            if_else(PROPDMGEXP == "K",1000,1)))) %>%
+  mutate(propertydamage = PROPDMG*propertydamagecoefficient) %>%
+  mutate(cropdamagecoefficient = 
+            if_else(CROPDMGEXP == "B",1000000000,
+            if_else(CROPDMGEXP == "M",1000000,
+            if_else(CROPDMGEXP == "K",1000,1)))) %>%
+  mutate(propertydamage = PROPDMG*propertydamagecoefficient) %>%
+  mutate(cropdamage = CROPDMG*cropdamagecoefficient) %>%
+  mutate(totaldamage = propertydamage + cropdamage) %>%
+  group_by(year) %>%
+  summarise( averagedamage = currency(mean(totaldamage)), aggdamage = currency(sum(totaldamage)))
+
+ggplot(data = stormbyyear) + 
+  geom_smooth(mapping = aes(x = year, y = aggdamage), se = FALSE, method = 'loess')+
+  labs(title="Total Damage by Year",y = "Cost")
+
+
+```
+
+
+```{r, warning = FALSE}
+stormdamagebyevtype <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  mutate(propertydamagecoefficient = 
+            if_else(PROPDMGEXP == "B",1000000000,
+            if_else(PROPDMGEXP == "M",1000000,
+            if_else(PROPDMGEXP == "K",1000,1)))) %>%
+  mutate(propertydamage = PROPDMG*propertydamagecoefficient) %>%
+  mutate(cropdamagecoefficient = 
+            if_else(CROPDMGEXP == "B",1000000000,
+            if_else(CROPDMGEXP == "M",1000000,
+            if_else(CROPDMGEXP == "K",1000,1)))) %>%
+  mutate(propertydamage = PROPDMG*propertydamagecoefficient) %>%
+  mutate(cropdamage = CROPDMG*cropdamagecoefficient) %>%
+  mutate(totaldamage = propertydamage + cropdamage) %>%
+  group_by(EVTYPE) %>%
+  summarise( averagedamage = currency(mean(totaldamage)), aggdamage = currency(sum(totaldamage)))
+
+```
+
+
+
+Similar to the health analyis, the large number of event categories requires filtering. I chose to create the 6 subset of categories I saw in the data: TORNADO, FLOOD, HURRICANE, FIRE, FREEZE, OTHER.
+
+
+```{r , echo=TRUE, warning = FALSE}
+
+
+stormdamagebycategorypost1993 <- storm %>%
+  mutate(year = year(mdy_hms(BGN_DATE))) %>%
+  mutate(propertydamagecoefficient = 
+        if_else(PROPDMGEXP == "B",1000000000,
+        if_else(PROPDMGEXP == "M",1000000,
+        if_else(PROPDMGEXP == "K",1000,1)))) %>%
+  mutate(propertydamage = PROPDMG*propertydamagecoefficient) %>%
+  mutate(cropdamagecoefficient = 
+        if_else(CROPDMGEXP == "B",1000000000,
+        if_else(CROPDMGEXP == "M",1000000,
+        if_else(CROPDMGEXP == "K",1000,1)))) %>%
+  mutate(propertydamage = PROPDMG*propertydamagecoefficient) %>%
+  mutate(cropdamage = CROPDMG*cropdamagecoefficient) %>%
+  mutate(totaldamage = propertydamage + cropdamage) %>%
+  mutate(Category = if_else(grepl("TORNADO",storm$EVTYPE) == TRUE,"TORNADO",
+        if_else(grepl("FLOOD",storm$EVTYPE) == TRUE,"FLOOD",
+        if_else(grepl("Flood",storm$EVTYPE) == TRUE,"FLOOD",
+        if_else(grepl("RAIN",storm$EVTYPE) == TRUE,"FLOOD",
+        if_else(grepl("WET",storm$EVTYPE) == TRUE,"FLOOD",
+        if_else(grepl("Rain",storm$EVTYPE) == TRUE,"FLOOD",
+        if_else(grepl("WET",storm$EVTYPE) == TRUE,"FLOOD",
+        if_else(grepl("HURRICANE",storm$EVTYPE) == TRUE,"HURRICANE",
+        if_else(grepl("TYPHOON",storm$EVTYPE) == TRUE,"HURRICANE",
+        if_else(grepl("STORM",storm$EVTYPE) == TRUE,"HURRICANE",
+        if_else(grepl("FIRE",storm$EVTYPE) == TRUE,"FIRE",
+        if_else(grepl("FREEZE",storm$EVTYPE) == TRUE,"FREEZE",
+        if_else(grepl("Freeze",storm$EVTYPE) == TRUE,"FREEZE",
+        if_else(grepl("Frost",storm$EVTYPE) == TRUE,"FREEZE",
+        if_else(grepl("COLD",storm$EVTYPE) == TRUE,"FREEZE","OTHER")))))))))))))))) %>%
+  filter(year >= 1993) %>%
+  group_by(Category) %>%
+  summarise( averagedamage = currency(mean(totaldamage))) %>%
+  arrange(desc(averagedamage))
+
+ggplot(data = stormdamagebycategorypost1993) + 
+  geom_bar(mapping = aes(x = Category, y = averagedamage), stat = "identity")+
+  labs(title="Average Cost of Damage Since 1993 by Event",y = "Average Damage Cost")
+
+```
+
+
+
+
+### Average Cost of Damage Since 2000 by Event
+In terms of the the greatest economic consequences, `r stormdamagebycategorypost1993[1,1]` related events are the most impactful, as they average `r stormdamagebycategorypost1993[1,1]` worth of damage per event. `r stormdamagebycategorypost1993[2,1]` related events are close behind with `r stormdamagebycategorypost1993[1,2]` worth of damage per event.
+
